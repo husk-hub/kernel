@@ -335,6 +335,11 @@
     border-top: 1px solid var(--border);
     padding-top: 18px;
   }
+  body.view-mode .page-head, body.view-mode .sliders, body.view-mode .contact, body.view-mode footer.credit{ display: none; }
+  body.view-mode .layout{ display: block; max-width: 520px; margin: 24px auto 0; }
+  body.view-mode .snapshot{ position: static !important; }
+  .viewbar{ max-width: 520px; margin: 28px auto 0; text-align: center; }
+  .viewbar .btn{ margin-top: 4px; }
 </style>
 
 <div class="page-head">
@@ -386,11 +391,9 @@
 
   <div class="actions">
     <button class="btn btn-primary" id="submitBtn" type="button">Submit to Husk</button>
-    <button class="btn btn-secondary" id="shareBtn" type="button" hidden>Share directly</button>
-    <button class="btn btn-secondary" id="copySnapshotBtn" type="button">Copy snapshot (with image)</button>
-    <button class="btn btn-secondary" id="imageBtn" type="button">Download image only</button>
   </div>
-  <p class="action-note"><strong>Submit to Husk</strong> sends your write-up straight to us &mdash; no image, nothing to render, nothing that depends on a mail app cooperating. If it can't reach us for any reason, it copies the write-up to your clipboard instead and tells you so &mdash; paste it (Cmd/Ctrl+V) into a new email to husk@huskdesign.com and hit send. Either way, nothing is ever lost. Want the visual snapshot to land in an email too? Use <strong>Copy snapshot (with image)</strong> and paste it in; it just has a bit more to go wrong on unusual browsers, which is why it's the optional extra rather than the default. Prefer your device open a draft for you instead? <a href="#" id="emailBtn">Open a pre-filled email</a> &mdash; works on most devices, just not guaranteed on every one, which is why it's a bonus rather than the button above.</p>
+  <p class="action-note" id="actionNote">That's it. This sends your answers straight to Husk, with nothing else to attach.</p>
+  <p class="action-note" id="afterSend" hidden>Want a copy for yourself? <a href="#" id="imageLink">Save a picture of your snapshot</a>.</p>
   <p class="toast" id="toast" role="status" aria-live="polite"></p>
 </div>
 
@@ -524,7 +527,20 @@
       lines.push('');
       lines.push(`Notes: ${notes}`);
     }
+    lines.push('');
+    lines.push('Snapshot as an image (open it, then Save image): ' + buildViewLink());
     return lines.join('\n');
+  }
+
+  function buildViewLink(){
+    const enc = (k) => state.map(s => s[k].toString(36)).join('');
+    const base = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : 'https://kernel.huskdesign.com/';
+    const company = document.getElementById('company').value.trim().slice(0, 60);
+    const name = document.getElementById('contactName').value.trim().slice(0, 60);
+    const q = new URLSearchParams({ v: '1', d: enc('today'), t: enc('target') });
+    if (company) q.set('c', company);
+    if (name) q.set('n', name);
+    return base + '#' + q.toString();
   }
 
   function showToast(msg){
@@ -532,60 +548,6 @@
     t.textContent = msg;
     setTimeout(() => { if (t.textContent === msg) t.textContent = ''; }, 4000);
   }
-
-  function buildMailto(){
-    const company = document.getElementById('company').value.trim() || 'a client';
-    const subject = encodeURIComponent(`Brand positioning snapshot — ${company}`);
-    let summary = buildSummary();
-    // Mail apps and mobile browsers are inconsistent about long mailto: bodies —
-    // some truncate or silently refuse the hand-off past a couple thousand
-    // *encoded* characters. The em dashes and arrows in this write-up are
-    // multi-byte, so they expand a lot under encodeURIComponent (roughly 9
-    // characters each) — checking the raw string length isn't enough, so this
-    // measures (and trims against) the actual encoded length instead.
-    const MAX_ENCODED_BODY = 1500;
-    const TRUNCATE_NOTE = '\n\n[Truncated — use "Copy snapshot" for the full write-up.]';
-    let body = encodeURIComponent(summary);
-    if (body.length > MAX_ENCODED_BODY){
-      const noteLen = encodeURIComponent(TRUNCATE_NOTE).length;
-      let lo = 0, hi = summary.length, best = 0;
-      while (lo <= hi){
-        const mid = (lo + hi) >> 1;
-        const candidateLen = encodeURIComponent(summary.slice(0, mid)).length + noteLen;
-        if (candidateLen <= MAX_ENCODED_BODY){ best = mid; lo = mid + 1; } else { hi = mid - 1; }
-      }
-      summary = summary.slice(0, best) + TRUNCATE_NOTE;
-      body = encodeURIComponent(summary);
-    }
-    return `mailto:husk@huskdesign.com?subject=${subject}&body=${body}`;
-  }
-
-  document.getElementById('emailBtn').addEventListener('click', function(e){
-    // A plain same-frame navigation to a mailto: link (via href + default click,
-    // or via location.href) is what browsers treat as a "top-level navigation" —
-    // and this tool runs inside a sandboxed iframe (the Artifact host), which on
-    // iOS Safari specifically blocks a sandboxed frame from navigating to a
-    // custom URL scheme like mailto: unless the sandbox explicitly allows it.
-    // Opening the same URL with window.open() instead asks for a *new*
-    // browsing context — treated as a popup rather than a navigation — which
-    // sandboxed iframes typically permit even when they block top navigation.
-    // That's the fix: try window.open() first (this must stay synchronous,
-    // inside the click handler, or iOS will treat it as an unrequested popup
-    // and block it regardless), and only fall back to a direct href navigation
-    // if window.open() itself is unavailable or blocked.
-    e.preventDefault();
-    const mailto = buildMailto();
-    this.href = mailto; // keeps long-press / right-click "open link" working as a manual fallback
-    let handedOff = false;
-    try{
-      const win = window.open(mailto, '_blank');
-      handedOff = !!win;
-    }catch(err){}
-    if (!handedOff){
-      try{ window.location.href = mailto; }catch(err){}
-    }
-    showToast('If your device allows it, your email app is opening with the write-up ready. If nothing happens, use "Submit to Husk" instead — it always works.');
-  });
 
   function copyViaExecCommand(text){
     // Old-style fallback for browsers/contexts without navigator.clipboard
@@ -708,7 +670,8 @@
       contact_email: email,
       message: text,
     }).then(() => {
-      showToast('Sent — Husk has it. You’ll hear from us shortly.');
+      showToast('Sent. Husk has it, and you’ll hear from us shortly.');
+      document.getElementById('afterSend').hidden = false;
       btn.disabled = false;
       btn.textContent = originalLabel;
     }).catch(() => {
@@ -719,37 +682,6 @@
       btn.textContent = originalLabel;
       fallBackToClipboard(text, true);
     });
-  });
-
-  document.getElementById('copySnapshotBtn').addEventListener('click', function(){
-    // Safari only permits navigator.clipboard.write when it's called
-    // synchronously inside the user-gesture handler — so this call happens
-    // first, with no await before it, and the (async) image render is handed
-    // in as a pending promise rather than awaited up front. The browser
-    // waits for that promise to resolve before finishing the copy.
-    const textBlob = new Blob([buildSummary()], { type: 'text/plain' });
-    let wrote = false;
-    try{
-      if (navigator.clipboard && window.ClipboardItem){
-        const item = new ClipboardItem({
-          'text/plain': textBlob,
-          'image/png': renderSnapshotBlob(),
-        });
-        navigator.clipboard.write([item]).then(() => {
-          showToast('Copied — paste (Cmd/Ctrl+V) into a new email and the snapshot appears inline.');
-        }).catch(() => {
-          navigator.clipboard.writeText(buildSummary())
-            .then(() => showToast('Copied the write-up as text — your browser wouldn’t copy the image directly, so use "Download image only" for that.'))
-            .catch(() => showToast('Could not copy automatically — try "Download image only" instead.'));
-        });
-        wrote = true;
-      }
-    }catch(e){}
-    if (!wrote){
-      navigator.clipboard.writeText(buildSummary())
-        .then(() => showToast('Copied the write-up as text — your browser wouldn’t copy the image directly, so use "Download image only" for that.'))
-        .catch(() => showToast('Could not copy automatically — try "Download image only" instead.'));
-    }
   });
 
   function slug(){
@@ -917,38 +849,53 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
-  document.getElementById('imageBtn').addEventListener('click', async () => {
-    const downloads = await (window.claude ? window.claude.use('downloads') : Promise.resolve(null));
-    if (!downloads){
-      showToast('Downloads aren’t available here — try "Share directly" or "Copy as text" instead.');
-      return;
-    }
+  function downloadBlob(blob, name){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 4000);
+  }
+
+  async function saveSnapshotImage(){
     try{
       const blob = await renderSnapshotBlob();
-      await downloads.save({ filename: `brand-snapshot-${slug()}.png`, data: blob });
-      showToast('Saved — attach it to the write-up email whenever you’re ready.');
+      downloadBlob(blob, `brand-snapshot-${slug()}.png`);
+      showToast('Saved. Check your downloads or Photos.');
     }catch(e){
-      showToast('Could not save the image — try "Copy as text" instead.');
+      showToast('Could not make the image on this device.');
     }
-  });
+  }
 
-  (function setUpShare(){
-    const btn = document.getElementById('shareBtn');
-    let canShareFiles = false;
-    try{
-      const probe = new File([''], 'probe.png', { type: 'image/png' });
-      canShareFiles = !!(navigator.canShare && navigator.canShare({ files: [probe] }));
-    }catch(e){}
-    if (!canShareFiles) return;
-    btn.hidden = false;
-    btn.addEventListener('click', async () => {
-      try{
-        const blob = await renderSnapshotBlob();
-        const file = new File([blob], `brand-snapshot-${slug()}.png`, { type: 'image/png' });
-        await navigator.share({ files: [file], title: 'Brand positioning snapshot', text: buildSummary() });
-      }catch(e){
-        if (e && e.name !== 'AbortError') showToast('Could not open the share sheet — try downloading instead.');
-      }
+  document.getElementById('imageLink').addEventListener('click', (e) => { e.preventDefault(); saveSnapshotImage(); });
+
+  // Snapshot view: the link in the email re-draws a client's snapshot from the
+  // numbers in the URL, so Husk can save the image without any attachment.
+  (function initViewMode(){
+    const m = /[#&]v=1(?:&|$)/.test(location.hash);
+    if (!m) return;
+    const p = new URLSearchParams(location.hash.slice(1));
+    const dec = (s) => String(s || '').split('').slice(0, SPECTRA.length).map(c => { const n = parseInt(c, 36); return n >= 0 && n <= 10 ? n : 5; });
+    const d = dec(p.get('d')), t = dec(p.get('t'));
+    SPECTRA.forEach((s, i) => {
+      if (d[i] !== undefined) state[i].today = d[i];
+      if (t[i] !== undefined) state[i].target = t[i];
+      renderRow(i);
     });
+    const company = (p.get('c') || '').slice(0, 80);
+    const who = (p.get('n') || '').slice(0, 80);
+    document.getElementById('company').value = company;
+    document.getElementById('contactName').value = who;
+    document.body.classList.add('view-mode');
+    const h2 = document.querySelector('#snapshot h2');
+    if (h2 && company) h2.textContent = company;
+    const sub = document.querySelector('#snapshot .snapshot-sub');
+    if (sub) sub.textContent = who ? 'Submitted by ' + who : 'Submitted snapshot';
+    const bar = document.createElement('div');
+    bar.className = 'viewbar';
+    bar.innerHTML = '<button class="btn btn-primary" id="viewSaveBtn" type="button">Save as image</button>';
+    document.querySelector('.layout').insertAdjacentElement('afterend', bar);
+    document.getElementById('viewSaveBtn').addEventListener('click', saveSnapshotImage);
   })();
 </script>
