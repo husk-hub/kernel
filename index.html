@@ -130,6 +130,7 @@
     margin: 0 0 10px;
   }
   header.intro p strong{ color: var(--text); font-weight: 600; }
+  header.intro p.intro-tip strong{ color: var(--accent); }
 
   .layout{
     display: grid;
@@ -369,6 +370,7 @@
     <p class="eyebrow">Husk Design &middot; Brand Positioning</p>
     <h1>Where does your brand actually sit?</h1>
     <p>Think of it as a very small therapy session for your brand. Nine sliders, two lines each. <strong>Top line is where you are</strong>, <strong>bottom line is where you want to be</strong>, 0 to 10. The distance between them is the brief. Same number on both? You're annoyingly well adjusted.</p>
+    <p class="intro-tip"><strong>Starting from scratch?</strong> Just use the red target sliders and leave the green ones be.</p>
   </header>
   <img src="logo.png" alt="Husk Design" class="page-logo">
 </div>
@@ -437,6 +439,7 @@
 
   const SCALE_MIN = 0, SCALE_MAX = 10;
   const state = SPECTRA.map(() => ({ today: 5, target: 5 }));
+  let todayTouched = false; // false = starting from scratch, only targets set
 
   const slidersEl = document.getElementById('sliders');
   const snapshotRowsEl = document.getElementById('snapshotRows');
@@ -518,6 +521,7 @@
   SPECTRA.forEach((s, i) => {
     document.getElementById(`today-${i}`).addEventListener('input', (e) => {
       state[i].today = Number(e.target.value);
+      todayTouched = true;
       renderRow(i);
     });
     document.getElementById(`target-${i}`).addEventListener('input', (e) => {
@@ -538,13 +542,18 @@
     lines.push(`Company: ${company}`);
     lines.push(`Contact: ${name} (${email})`);
     lines.push('');
+    const fresh = !todayTouched;
+    if (fresh){
+      lines.push('Starting from scratch: the Today sliders were left alone, so only the targets count.');
+      lines.push('');
+    }
     SPECTRA.forEach((s, i) => {
       const { today, target } = state[i];
       const note = gapNote(i, s);
       lines.push(`${s.left} ↔ ${s.right}`);
-      lines.push(`  Today:  ${today}/10 (${readout(today, s)})`);
+      if (!fresh) lines.push(`  Today:  ${today}/10 (${readout(today, s)})`);
       lines.push(`  Target: ${target}/10 (${readout(target, s)})`);
-      lines.push(`  ${note.text}`);
+      if (!fresh) lines.push(`  ${note.text}`);
     });
     if (notes){
       lines.push('');
